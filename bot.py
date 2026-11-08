@@ -2,6 +2,18 @@ import time
 import math
 import random
 import requests
+from threading import Thread
+from flask import Flask
+
+# Servidor web interno para evitar que Render duerma la aplicación en el plan gratuito
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "¡Bot OTC de Telegram activo y operando 24/7!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
 
 # Tus credenciales de Telegram
 TELEGRAM_TOKEN = "9093655969:AAGze8SjPdtuTicmsepTHI5KlPs_33HC4iA"
@@ -139,19 +151,21 @@ def generar_y_enviar_senal(par, forzar_manual=False):
         return False
 
 if __name__ == "__main__":
-    print("Bot OTC blindado iniciado...")
-    enviar_alerta("🟢 *¡Bot OTC Blindado y Activo!* Con protección anti-caídas. Escribe **'/senal'** cuando quieras.")
+    # Arrancar el servidor Flask en un hilo independiente para mantener vivo a Render
+    t = Thread(target=run_flask)
+    t.daemon = True
+    t.start()
+    
+    print("Bot OTC con servidor web anti-apagado iniciado...")
+    enviar_alerta("🟢 *¡Bot OTC Activo 24/7!* Servidor web integrado para evitar suspensiones. Escribe **'/senal'** cuando quieras.")
     
     offset = 0
     ciclo_escaneo = 0
     
-    # Bucle principal totalmente blindado contra bloqueos
     while True:
         try:
-            # 1. Revisa tus comandos de Telegram al instante
             offset = verificar_mensajes_telegram(offset)
             
-            # 2. Escaneo automático cada 2 minutos
             ciclo_escaneo += 1
             if ciclo_escaneo >= 24:
                 for par in PARES_MONITOREO:
