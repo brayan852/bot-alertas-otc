@@ -7,12 +7,16 @@ import requests
 TELEGRAM_TOKEN = "9093655969:AAGze8SjPdtuTicmsepTHI5KlPs_33HC4iA"
 CHAT_ID = "8970733209"
 
+# Pares configurados exactamente para OTC como los operas en Quotex
 PARES_MONITOREO = [
-    "EUR/USD (Mercado Real)",
-    "GBP/USD (Mercado Real)",
-    "USD/JPY (Mercado Real)",
-    "EUR/GBP (Mercado Real)"
+    "USD/DZD (OTC)",
+    "EUR/USD (OTC)",
+    "GBP/USD (OTC)",
+    "EUR/GBP (OTC)"
 ]
+
+# Variable global para rotar el par cuando pidas la señal manual
+indice_manual = 0
 
 def enviar_alerta(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -27,7 +31,7 @@ def enviar_alerta(mensaje):
         print(f"Error al enviar mensaje: {e}")
 
 def verificar_mensajes_telegram(ultimo_offset):
-    """Revisa si le escribiste al bot por Telegram pidiendo una señal manual"""
+    global indice_manual
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={ultimo_offset}&timeout=1"
     try:
         respuesta = requests.get(url, timeout=3).json()
@@ -38,11 +42,13 @@ def verificar_mensajes_telegram(ultimo_offset):
                 mensaje_texto = res.get("message", {}).get("text", "").lower()
                 chat_id_recibido = str(res.get("message", {}).get("chat", {}).get("id", ""))
                 
-                # Si el mensaje viene de tu chat y pides señal
                 if chat_id_recibido == CHAT_ID and ("señal" in mensaje_texto or "/senal" in mensaje_texto or "analizar" in mensaje_texto):
-                    enviar_alerta("🔍 *[Comando Recibido]* Analizando el mercado de inmediato a petición tuya...")
-                    for par in PARES_MONITOREO[:1]: # Analiza un par principal al instante
-                        generar_y_enviar_senal(par, forzar_manual=True)
+                    # Selecciona el siguiente par de la lista en rotación
+                    par_seleccionado = PARES_MONITOREO[indice_manual]
+                    indice_manual = (indice_manual + 1) % len(PARES_MONITOREO)
+                    
+                    enviar_alerta(f"🔍 *[Comando Recibido]* Analizando {par_seleccionado} a petición tuya...")
+                    generar_y_enviar_senal(par_seleccionado, forzar_manual=True)
         return ultimo_offset
     except Exception as e:
         print(f"Error al verificar Telegram: {e}")
@@ -78,7 +84,7 @@ def obtener_precio_actual(simbolo):
         base = 1.0
         if "EUR" in simbolo: base = rates.get("EUR", 0.92)
         elif "GBP" in simbolo: base = rates.get("GBP", 0.78)
-        elif "JPY" in simbolo: base = rates.get("JPY", 155.0)
+        elif "USD/DZD" in simbolo: base = 134.50  # Base realista para USD/DZD
         
         variacion = random.uniform(-0.0012, 0.0012)
         return round(base * (1 + variacion), 5)
@@ -100,24 +106,23 @@ def generar_y_enviar_senal(par, forzar_manual=False):
     
     tendencia_alcista = ema_9 > ema_21
     
-    # Si es manual, garantizamos que te devuelva una oportunidad con análisis real de inmediato
     if forzar_manual:
         direccion = "CALL 🟢 (Compra / Subida)" if tendencia_alcista else "PUT 🔴 (Venta / Baja)"
         efectividad = "90%"
-        justificacion = f"Análisis manual solicitado en {par}: EMA 9 ({ema_9:.4f}), EMA 21 ({ema_21:.4f}) con RSI en {rsi:.1f}."
+        justificacion = f"Análisis manual en {par}: EMA 9 ({ema_9:.4f}), EMA 21 ({ema_21:.4f}) con RSI en {rsi:.1f}."
     else:
         if tendencia_alcista and rsi <= 48:
             direccion = "CALL 🟢 (Compra / Subida)"
             efectividad = "89%"
-            justificacion = f"Impulso alcista detectado en {par}: EMA 9 sobre EMA 21 con RSI en {rsi:.1f}."
+            justificacion = f"Impulso alcista en {par}: EMA 9 sobre EMA 21 con RSI en {rsi:.1f}."
         elif not tendencia_alcista and rsi >= 52:
             direccion = "PUT 🔴 (Venta / Baja)"
             efectividad = "89%"
-            justificacion = f"Presión bajista detectada en {par}: EMA 9 bajo EMA 21 con RSI en {rsi:.1f}."
+            justificacion = f"Presión bajista en {par}: EMA 9 bajo EMA 21 con RSI en {rsi:.1f}."
         else:
             return False
 
-    tipo_aviso = "🎯 *¡SEÑAL MANUAL SOLICITADA!* 🎯" if forzar_manual else "🎯 *¡SEÑAL TÉCNICA DINÁMICA!* 🎯"
+    tipo_aviso = "🎯 *¡SEÑAL OTC MANUAL SOLICITADA!* 🎯" if forzar_manual else "🎯 *¡SEÑAL OTC AUTOMÁTICA!* 🎯"
     
     mensaje = (
         f"{tipo_aviso}\n\n"
@@ -133,25 +138,20 @@ def generar_y_enviar_senal(par, forzar_manual=False):
     return True
 
 if __name__ == "__main__":
-    print("Bot interactivo iniciado...")
-    enviar_alerta("🟢 *¡Bot interactivo activo!* Monitoreando automático 24/7. Escríbeme la palabra **'señal'** o **'/senal'** en este chat cuando quieras una entrada inmediata.")
+    print("Bot OTC interactivo iniciado...")
+    enviar_alerta("🟢 *¡Bot OTC Actualizado!* Monitoreando USD/DZD, EUR/USD, GBP/USD y EUR/GBP (OTC). Escribe **'/senal'** para pedir una entrada.")
     
     offset = 0
-    contador_latido = 0
+    ciclo_escaneo = 0
     
     while True:
-        # 1. Revisar si pediste señal por chat
         offset = verificar_mensajes_telegram(offset)
         
-        # 2. Escaneo automático de rutina en los 4 pares
-        for par in PARES_MONITOREO:
-            generar_y_enviar_senal(par, forzar_manual=False)
-            time.sleep(1)
+        ciclo_escaneo += 1
+        if ciclo_escaneo >= 24: # Cada 2 minutos escanea automático
+            for par in PARES_MONITOREO:
+                generar_y_enviar_senal(par, forzar_manual=False)
+                time.sleep(1)
+            ciclo_escaneo = 0
             
-        # Aviso de latido cada 30 min
-        contador_latido += 1
-        if contador_latido >= 30: # 30 ciclos de ~60 seg = 30 min
-            enviar_alerta("🔄 *[Sistemas Activos]* El bot sigue analizando los 4 pares de forma continua.")
-            contador_latido = 0
-            
-        time.sleep(60) # Pausa de 1 minuto entre rondas
+        time.sleep(5)
